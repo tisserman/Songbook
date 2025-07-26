@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Songbook Bar Alignment Prototype</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    user-select: none;
+  }
+  #lyricsInput {
+    width: 100%;
+    height: 100px;
+  }
+  #barsContainer {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0;
+    overflow-x: auto;
+  }
+  .bar {
+    flex: 0 0 100px;
+    height: 60px;
+    background: #ddd;
+    border-radius: 6px;
+    text-align: center;
+    cursor: grab;
+    position: relative;
+    padding: 4px;
+    box-sizing: border-box;
+  }
+  .bar.dragging {
+    opacity: 0.7;
+    cursor: grabbing;
+  }
+  .bar.highlighted {
+    background: #4caf50;
+    color: white;
+    font-weight: bold;
+  }
+  .chords {
+    font-size: 14px;
+    margin-top: 5px;
+    color: #333;
+  }
+  #lyricsDisplay {
+    border: 1px solid #ccc;
+    padding: 10px;
+    min-height: 60px;
+    margin-top: 10px;
+    white-space: pre-wrap;
+  }
+  #controls {
+    margin-top: 10px;
+  }
+  button {
+    margin-right: 10px;
+  }
+  #modeIndicator {
+    margin-bottom: 10px;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+
+<h2>Songbook Bar Alignment Prototype</h2>
+
+<div id="modeIndicator">Mode: Edit</div>
+
+<textarea id="lyricsInput" placeholder="Enter full lyrics here..."></textarea>
+
+<div>
+  Number of bars: <input type="number" id="barCount" min="1" max="50" value="8" style="width: 60px;">
+  <button id="generateBarsBtn">Generate Bars</button>
+</div>
+
+<div id="barsContainer"></div>
+
+<div id="lyricsDisplay"></div>
+
+<div id="controls">
+  <button id="toggleModeBtn">Switch to Playback Mode</button>
+  <button id="startPlaybackBtn" disabled>Start Playback</button>
+  <button id="stopPlaybackBtn" disabled>Stop Playback</button>
+</div>
+
+<script>
+(() => {
+  const lyricsInput = document.getElementById('lyricsInput');
+  const barsContainer = document.getElementById('barsContainer');
+  const lyricsDisplay = document.getElementById('lyricsDisplay');
+  const barCountInput = document.getElementById('barCount');
+  const generateBarsBtn = document.getElementById('generateBarsBtn');
+  const toggleModeBtn = document.getElementById('toggleModeBtn');
+  const startPlaybackBtn = document.getElementById('startPlaybackBtn');
+  const stopPlaybackBtn = document.getElementById('stopPlaybackBtn');
+  const modeIndicator = document.getElementById('modeIndicator');
+
+  let bars = [];
+  let isEditMode = true;
+  let playbackTimer = null;
+  let currentBarIndex = 0;
+
+  function createBar(index) {
+    const bar = document.createElement('div');
+    bar.classList.add('bar');
+    bar.setAttribute('draggable', true);
+    bar.dataset.index = index;
+    bar.textContent = `Bar ${index + 1}`;
+
+    const chordsDiv = document.createElement('div');
+    chordsDiv.className = 'chords';
+    chordsDiv.contentEditable = true;
+    chordsDiv.title = 'Click to edit chords';
+    chordsDiv.placeholder = 'Chords...';
+    bar.appendChild(chordsDiv);
+
+    // Drag handlers
+    bar.addEventListener('dragstart', (e) => {
+      bar.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', bar.dataset.index);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    bar.addEventListener('dragend', () => {
+      bar.classList.remove('dragging');
+      rebuildBarsArrayFromDOM();
+    });
+    bar.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const draggingBar = document.querySelector('.dragging');
+      if (!draggingBar) return;
+      if (bar === draggingBar) return;
+
+      const rect = bar.getBoundingClientRect();
+      const next = (e.clientX - rect.left) / rect.width > 0.5;
+      barsContainer.insertBefore(draggingBar, next ? bar.nextSibling : bar);
+    });
+
+    chordsDiv.addEventListener('input', () => {
+      bars[parseInt(bar.dataset.index)].chords = chordsDiv.textContent.trim();
+    });
+
+    return bar;
+  }
+
+  function rebuildBarsArrayFromDOM() {
+    const newBars = [];
+    [...barsContainer.children].forEach((barElem, i) => {
+      const chords = barElem.querySelector('.chords').textContent.trim();
+      newBars.push({ chords, position: 0 });
+      barElem.dataset.index = i;
+      barElem.textContent = `Bar ${i + 1}`;
+      const chordsDiv = document.createElement('div');
+      chordsDiv.className = 'chords';
+      chordsDiv.contentEditable = true;
+      chordsDiv.textContent = newBars[i].chords;
+      chordsDiv.title = 'Click to edit chords';
+      barElem.appendChild(chordsDiv);
+      chordsDiv.addEventListener('input', () => {
+        bars[i].chords = chordsDiv.textContent.trim();
+      });
+    });
+    bars = newBars;
+  }
+
+  function generateBars() {
+    barsContainer.innerHTML = '';
+    bars = [];
+    const count = parseInt(barCountInput.value);
+    for (let i = 0; i < count; i++) {
+      bars.push({ chords: '', position: 0 });
+    }
+    bars.forEach((bar, i) => {
+      const barElem = createBar(i);
+      barsContainer.appendChild(barElem);
+    });
+    updateLyricsDisplay();
+    startPlaybackBtn.disabled = false;
+  }
+
+  function updateLyricsDisplay(highlightIndex = -1) {
+    const lyrics = lyricsInput.value;
+    if (isEditMode) {
+      lyricsDisplay.textContent = lyrics;
+    } else {
+      // Playback mode: highlight bar
+      // For demo, highlight portion of lyrics roughly based on bar index
+      // This is a rough split for demonstration
+      const totalBars = bars.length;
+      const words = lyrics.split(/\s+/);
+      const wordsPerBar = Math.ceil(words.length / totalBars);
+
+      let start = highlightIndex * wordsPerBar;
+      let end = start + wordsPerBar;
+      if (start < 0) start = 0;
+      if (end > words.length) end = words.length;
+
+      const before = words.slice(0, start).join(' ');
+      const highlight = words.slice(start, end).join(' ');
+      const after = words.slice(end).join(' ');
+
+      lyricsDisplay.innerHTML =
+        `${before} <span style="background:#4caf50; color:#fff;">${highlight}</span> ${after}`;
+    }
+  }
+
+  function startPlayback() {
+    if (playbackTimer) return;
+    isEditMode = false;
+    modeIndicator.textContent = 'Mode: Playback';
+    toggleModeBtn.textContent = 'Switch to Edit Mode';
+    currentBarIndex = 0;
+    startPlaybackBtn.disabled = true;
+    stopPlaybackBtn.disabled = false;
+    updateLyricsDisplay(currentBarIndex);
+    highlightBar(currentBarIndex);
+
+    playbackTimer = setInterval(() => {
+      currentBarIndex++;
+      if (currentBarIndex >= bars.length) {
+        stopPlayback();
+        return;
+      }
+      updateLyricsDisplay(currentBarIndex);
+      highlightBar(currentBarIndex);
+    }, 2000);
+  }
+
+  function stopPlayback() {
+    if (playbackTimer) {
+      clearInterval(playbackTimer);
+      playbackTimer = null;
+    }
+    startPlaybackBtn.disabled = false;
+    stopPlaybackBtn.disabled = true;
+    updateLyricsDisplay(-1);
+    clearBarHighlight();
+  }
+
+  function highlightBar(index) {
+    clearBarHighlight();
+    const barElems = barsContainer.children;
+    if (index >= 0 && index < barElems.length) {
+      barElems[index].classList.add('highlighted');
+    }
+  }
+
+  function clearBarHighlight() {
+    [...barsContainer.children].forEach(bar => bar.classList.remove('highlighted'));
+  }
+
+  function toggleMode() {
+    if (isEditMode) {
+      stopPlayback();
+      isEditMode = false;
+      modeIndicator.textContent = 'Mode: Playback';
+      toggleModeBtn.textContent = 'Switch to Edit Mode';
+      barsContainer.querySelectorAll('.bar').forEach(bar => bar.setAttribute('draggable', false));
+      lyricsInput.disabled = true;
+      startPlaybackBtn.disabled = false;
+    } else {
+      stopPlayback();
+      isEditMode = true;
+      modeIndicator.textContent = 'Mode: Edit';
+      toggleModeBtn.textContent = 'Switch to Playback Mode';
+      barsContainer.querySelectorAll('.bar').forEach(bar => bar.setAttribute('draggable', true));
+      lyricsInput.disabled = false;
+      startPlaybackBtn.disabled = true;
+    }
+    updateLyricsDisplay(-1);
+    clearBarHighlight();
+  }
+
+  generateBars();
+
+  generateBarsBtn.addEventListener('click', generateBars);
+  startPlaybackBtn.addEventListener('click', startPlayback);
+  stopPlaybackBtn.addEventListener('click', stopPlayback);
+  toggleModeBtn.addEventListener('click', toggleMode);
+})();
+</script>
+
+</body>
+</html>
