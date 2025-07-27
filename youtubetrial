@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>YouTube Lyrics Sync</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header, footer {
+      padding: 1em;
+      background: #f4f4f4;
+      text-align: center;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1em;
+    }
+    #videoContainer {
+      margin-top: 1em;
+    }
+    #lyrics {
+      margin-top: 1em;
+      width: 80%;
+      max-width: 600px;
+      text-align: left;
+      line-height: 1.6em;
+    }
+    .line {
+      opacity: 0.6;
+      transition: 0.3s ease;
+    }
+    .line.active {
+      font-weight: bold;
+      color: #2196f3;
+      opacity: 1;
+    }
+    iframe {
+      max-width: 100%;
+    }
+    input {
+      width: 80%;
+      max-width: 500px;
+      padding: 0.5em;
+      font-size: 1em;
+    }
+    button {
+      margin-top: 0.5em;
+      padding: 0.5em 1em;
+      font-size: 1em;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>YouTube Lyrics Sync Prototype</h1>
+</header>
+
+<main>
+  <input type="text" id="youtubeUrl" placeholder="Paste YouTube link here" />
+  <button onclick="loadVideo()">Load Video</button>
+
+  <div id="videoContainer"></div>
+
+  <div id="lyrics"></div>
+</main>
+
+<footer>
+  <p>Prototype App — Lyrics are mocked for now.</p>
+</footer>
+
+<script>
+  let player;
+  let lyricLines = [
+    { time: 2, text: "This is the first line of the song" },
+    { time: 6, text: "And this is the second lyric line" },
+    { time: 10, text: "Here's the third one, it flows just right" },
+    { time: 14, text: "We’re nearing the end, hang tight" },
+    { time: 18, text: "Final line before it’s through" }
+  ];
+
+  function extractVideoID(url) {
+    const regex = /(?:youtube\.com.*v=|youtu\.be\/)([^&\n?#]+)/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+  }
+
+  function loadVideo() {
+    const url = document.getElementById('youtubeUrl').value;
+    const videoId = extractVideoID(url);
+    if (!videoId) {
+      alert("Invalid YouTube link.");
+      return;
+    }
+
+    document.getElementById('videoContainer').innerHTML = `
+      <div id="player"></div>
+    `;
+
+    // Load YouTube IFrame API if not already loaded
+    if (!window.YT) {
+      let tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.body.appendChild(tag);
+      window.onYouTubeIframeAPIReady = () => createPlayer(videoId);
+    } else {
+      createPlayer(videoId);
+    }
+
+    renderLyrics();
+  }
+
+  function createPlayer(videoId) {
+    player = new YT.Player('player', {
+      height: '360',
+      width: '640',
+      videoId: videoId,
+      events: {
+        'onReady': onPlayerReady,
+        'onStateChange': onPlayerStateChange
+      }
+    });
+  }
+
+  let interval = null;
+
+  function onPlayerReady(event) {
+    event.target.playVideo();
+  }
+
+  function onPlayerStateChange(event) {
+    clearInterval(interval);
+    if (event.data === YT.PlayerState.PLAYING) {
+      interval = setInterval(syncLyrics, 500);
+    }
+  }
+
+  function renderLyrics() {
+    const lyricsEl = document.getElementById('lyrics');
+    lyricsEl.innerHTML = lyricLines.map(
+      (line, index) => `<div class="line" id="line-${index}">${line.text}</div>`
+    ).join('');
+  }
+
+  function syncLyrics() {
+    if (!player || typeof player.getCurrentTime !== "function") return;
+    const currentTime = player.getCurrentTime();
+    lyricLines.forEach((line, index) => {
+      const nextLine = lyricLines[index + 1];
+      const isActive = currentTime >= line.time && (!nextLine || currentTime < nextLine.time);
+      document.getElementById(`line-${index}`).classList.toggle('active', isActive);
+    });
+  }
+</script>
+
+</body>
+</html>
